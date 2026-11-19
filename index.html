@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker | Insights</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css?v=3">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- Auth Split Screen -->
+    <div class="auth-split-container" id="authContainer">
+        
+        <!-- Left Visual Side -->
+        <div class="auth-visual">
+            <div class="visual-overlay"></div>
+            <div class="auth-visual-content">
+                <div class="visual-logo-wrapper">
+                    <span class="material-icons visual-logo">account_balance_wallet</span>
+                    <span class="visual-brand">Trackr</span>
+                </div>
+                <h2>Take control of your finances.</h2>
+                <p>Track your spending, gain intelligent insights, and achieve your financial goals with our beautifully crafted platform.</p>
+            </div>
+        </div>
+
+        <!-- Right Form Side -->
+        <div class="auth-form-side">
+            <div class="auth-form-wrapper">
+                
+                <!-- Login Form -->
+                <form id="loginForm" class="auth-form active">
+                    <div class="auth-header">
+                        <h1>Welcome back</h1>
+                        <p>Please enter your details to sign in.</p>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginEmail">Email address</label>
+                        <input type="email" id="loginEmail" placeholder="Enter your email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <input type="password" id="loginPassword" placeholder="••••••••" required>
+                    </div>
+                    <button type="submit" class="btn-primary w-100 btn-large">Sign in</button>
+                    <div id="loginError" class="auth-error"></div>
+                    <p class="auth-switch">Don't have an account? <a href="#" id="showRegister">Sign up</a></p>
+                </form>
+                
+                <!-- Register Form -->
+                <form id="registerForm" class="auth-form">
+                    <div class="auth-header">
+                        <h1>Create an account</h1>
+                        <p>Start your financial journey today.</p>
+                    </div>
+                    <div class="form-group">
+                        <label for="regUsername">Username</label>
+                        <input type="text" id="regUsername" placeholder="Choose a username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regEmail">Email address</label>
+                        <input type="email" id="regEmail" placeholder="Enter your email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regPassword">Password</label>
+                        <input type="password" id="regPassword" placeholder="Create a password (min 6 chars)" required minlength="6">
+                    </div>
+                    <button type="submit" class="btn-primary w-100 btn-large">Create account</button>
+                    <div id="registerError" class="auth-error"></div>
+                    <p class="auth-switch">Already have an account? <a href="#" id="showLogin">Log in</a></p>
+                </form>
+
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container" id="appContainer" style="display: none;">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="logo">
+                <span class="material-icons logo-icon">account_balance_wallet</span>
+                <h1>Trackr</h1>
+            </div>
+            <nav>
+                <a href="#" class="nav-link active" data-target="view-dashboard"><span class="material-icons">dashboard</span> Dashboard</a>
+                <a href="#" class="nav-link" data-target="view-transactions"><span class="material-icons">receipt_long</span> Transactions</a>
+                <a href="#" class="nav-link" data-target="view-analytics"><span class="material-icons">pie_chart</span> Analytics</a>
+                <a href="#" class="nav-link" data-target="view-settings"><span class="material-icons">settings</span> Settings</a>
+            </nav>
+            <div class="user-profile">
+                <div class="avatar">
+                    <img src="https://ui-avatars.com/api/?name=User&background=0D8ABC&color=fff" alt="User Avatar" id="userAvatar">
+                </div>
+                <div class="user-info">
+                    <span class="user-name" id="sidebarUserName">Welcome</span>
+                    <button id="logoutBtn" class="logout-btn"><span class="material-icons" style="font-size: 14px;">logout</span> Logout</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="search-bar">
+                    <span class="material-icons">search</span>
+                    <input type="text" placeholder="Search transactions...">
+                </div>
+                <div class="header-actions">
+                    <button class="icon-btn" id="themeToggleBtn" title="Toggle Dark Mode">
+                        <span class="material-icons" id="themeIcon">dark_mode</span>
+                    </button>
+                    <div class="notification-wrapper">
+                        <button class="icon-btn notification-btn" id="notificationBtn">
+                            <span class="material-icons">notifications</span>
+                            <span class="badge" id="notificationBadge" style="display: none;"></span>
+                        </button>
+                        <div class="notifications-dropdown" id="notificationsDropdown">
+                            <div class="dropdown-header">
+                                <h3>Notifications</h3>
+                                <button class="clear-btn" id="clearNotificationsBtn">Clear</button>
+                            </div>
+                            <div class="dropdown-list" id="notificationsList">
+                                <div class="empty-state" style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 14px;">No new notifications</div>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn-primary" id="openAddModalBtn">
+                        <span class="material-icons">add</span> Add Expense
+                    </button>
+                </div>
+            </header>
+
+            <div id="view-dashboard" class="view-section active" style="display: block;">
+                <div class="dashboard-grid">
+                <!-- Summary Cards -->
+                <div class="summary-section">
+                    <div class="card summary-card gradient-card">
+                        <div class="card-icon"><span class="material-icons">account_balance</span></div>
+                        <div class="card-content">
+                            <h3>Total Expenses (This Month)</h3>
+                            <h2 id="totalMonthAmount">$0.00</h2>
+                        </div>
+                    </div>
+                    <div class="card summary-card">
+                        <div class="card-icon income-icon"><span class="material-icons">trending_up</span></div>
+                        <div class="card-content">
+                            <h3>Average Daily</h3>
+                            <h2 id="avgDailyAmount">$0.00</h2>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Section -->
+                <div class="charts-section">
+                    <div class="card chart-card">
+                        <div class="card-header">
+                            <h3>Expense Trend (Last 30 Days)</h3>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="trendChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card chart-card">
+                        <div class="card-header">
+                            <h3>Category Breakdown</h3>
+                        </div>
+                        <div class="chart-container pie-container">
+                            <canvas id="categoryChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Transactions Section -->
+                <div class="transactions-section">
+                    <div class="card full-width-card">
+                        <div class="card-header">
+                            <h3>Recent Transactions</h3>
+                            <button class="btn-secondary">View All</button>
+                        </div>
+                        <div class="transactions-list" id="recentTransactionsList">
+                            <!-- Transactions will be injected here via JS -->
+                            <div class="loading-state">Loading transactions...</div>
+                        </div>
+                    </div>
+                </div>
+                    </div>
+                </div>
+
+            <div id="view-transactions" class="view-section" style="display: none;">
+                <div class="card full-width-card">
+                    <div class="card-header">
+                        <h3>All Transactions</h3>
+                    </div>
+                    <div class="transactions-list" id="allTransactionsList">
+                        <!-- Transactions will be injected here via JS -->
+                        <div class="loading-state">Loading transactions...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-analytics" class="view-section" style="display: none;">
+                <div class="dashboard-grid summary-section" style="margin-bottom: 24px;">
+                    <div class="card summary-card">
+                        <div class="card-icon" style="background: #FEF2F2; color: #EF4444;"><span class="material-icons">warning</span></div>
+                        <div class="card-content">
+                            <h3>Largest Single Expense</h3>
+                            <h2 id="largestExpenseAmount">$0.00</h2>
+                            <p id="largestExpenseDesc" style="font-size: 13px; color: var(--text-muted);">N/A</p>
+                        </div>
+                    </div>
+                    <div class="card summary-card">
+                        <div class="card-icon" style="background: #EFF6FF; color: #3B82F6;"><span class="material-icons">category</span></div>
+                        <div class="card-content">
+                            <h3>Top Category</h3>
+                            <h2 id="topCategoryName">N/A</h2>
+                            <p id="topCategoryAmount" style="font-size: 13px; color: var(--text-muted);">$0.00</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="charts-section">
+                    <div class="card chart-card">
+                        <div class="card-header">
+                            <h3>Spending by Category</h3>
+                        </div>
+                        <div class="chart-container" style="height: 300px;">
+                            <canvas id="barChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card full-width-card">
+                        <div class="card-header">
+                            <h3>Category Deep Dive</h3>
+                        </div>
+                        <div class="deep-dive-list" id="deepDiveList">
+                            <div class="loading-state">Loading insights...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-settings" class="view-section" style="display: none;">
+                <div class="dashboard-grid summary-section">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Add Custom Category</h3>
+                        </div>
+                        <form id="addCategoryForm">
+                            <div class="form-group">
+                                <label for="catName">Category Name</label>
+                                <input type="text" id="catName" name="name" required placeholder="e.g., Subscriptions">
+                            </div>
+                            <div class="form-group">
+                                <label for="catColor">Color</label>
+                                <input type="color" id="catColor" name="color" value="#4F46E5" style="height: 44px; padding: 4px;">
+                            </div>
+                            <div class="form-group">
+                                <label for="catIcon">Material Icon Name</label>
+                                <input type="text" id="catIcon" name="icon" required placeholder="e.g., star">
+                            </div>
+                            <button type="submit" class="btn-primary" id="saveCategoryBtn">Save Category</button>
+                        </form>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Preferences</h3>
+                        </div>
+                        <div class="form-group">
+                            <label for="currencyOverride">Currency Override</label>
+                            <div class="select-wrapper">
+                                <select id="currencyOverride">
+                                    <option value="AUTO">Auto Detect (Current)</option>
+                                    <option value="USD">USD ($)</option>
+                                    <option value="EUR">EUR (€)</option>
+                                    <option value="GBP">GBP (£)</option>
+                                    <option value="INR">INR (₹)</option>
+                                    <option value="AUD">AUD ($)</option>
+                                    <option value="CAD">CAD ($)</option>
+                                </select>
+                                <span class="material-icons select-icon">expand_more</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add Expense Modal -->
+    <div class="modal-overlay" id="addExpenseModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="expenseModalTitle">Add New Expense</h2>
+                <button class="close-btn" id="closeAddModalBtn"><span class="material-icons">close</span></button>
+            </div>
+            <form id="addExpenseForm">
+                <input type="hidden" name="id" id="expenseId">
+                <div class="form-group">
+                    <label for="amount">Amount</label>
+                    <div class="input-with-icon">
+                        <span class="material-icons">payments</span>
+                        <input type="number" id="amount" name="amount" step="0.01" min="0.01" required placeholder="0.00">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="category">Category</label>
+                    <div class="select-wrapper">
+                        <select id="category" name="category_id" required>
+                            <option value="" disabled selected>Select a category</option>
+                            <!-- Categories will be injected here -->
+                        </select>
+                        <span class="material-icons select-icon">expand_more</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="date">Date</label>
+                    <input type="date" id="date" name="date" required>
+                </div>
+                <div class="form-group">
+                    <label for="description">Description (Optional)</label>
+                    <textarea id="description" name="description" rows="2" placeholder="What was this expense for?"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="cancelAddBtn">Cancel</button>
+                    <button type="submit" class="btn-primary" id="saveExpenseBtn">Save Expense</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="js/app.js?v=3"></script>
+</body>
+</html>

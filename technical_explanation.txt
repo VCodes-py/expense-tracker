@@ -1,0 +1,577 @@
+================================================================================
+           TRACKR — EXPENSE TRACKER APPLICATION
+           DETAILED TECHNICAL EXPLANATION
+================================================================================
+
+1. PROJECT OVERVIEW
+================================================================================
+
+Trackr is a full-stack, session-based, multi-user personal expense tracking
+web application built as a Single Page Application (SPA). It allows users to
+register, log in, add/edit/delete expenses categorized under predefined or
+custom categories, and view analytical insights through interactive charts
+and smart notifications.
+
+Technology Stack:
+  - Frontend  : HTML5, Vanilla JavaScript (ES6+), CSS3 with custom properties
+  - Backend   : PHP 7+ REST API
+  - Database  : MySQL with PDO abstraction
+  - Server    : XAMPP (Apache + MySQL)
+  - Charts    : Chart.js library
+  - Icons     : Google Material Icons
+  - Typography: Google Fonts (Inter)
+
+Total Codebase Size:
+  - index.html       : 337 lines  (17 KB) — Single HTML page
+  - js/app.js         : 832 lines  (33 KB) — All frontend logic
+  - css/styles.css    : ~700 lines (19 KB) — Complete styling + dark mode
+  - PHP API files     : 11 files   (~15 KB) — RESTful backend
+  - database.sql      : 43 lines   (1.4 KB) — Schema + seed data
+
+
+2. DATABASE DESIGN
+================================================================================
+
+The database is named "expense_tracker" and contains 3 tables:
+
+TABLE: users
++----------------+--------------+-----------------------------------------------+
+| Column         | Type         | Notes                                         |
++----------------+--------------+-----------------------------------------------+
+| id             | INT (PK)     | Auto-increment primary key                    |
+| username       | VARCHAR(255) | Unique, not null                              |
+| email          | VARCHAR(255) | Unique, not null                              |
+| password_hash  | VARCHAR(255) | bcrypt hash of password                       |
+| created_at     | TIMESTAMP    | Auto-set on creation                          |
++----------------+--------------+-----------------------------------------------+
+
+TABLE: categories
++----------------+--------------+-----------------------------------------------+
+| Column         | Type         | Notes                                         |
++----------------+--------------+-----------------------------------------------+
+| id             | INT (PK)     | Auto-increment primary key                    |
+| user_id        | INT (FK)     | NULL = shared default category                |
+| name           | VARCHAR(255) | Category label (e.g., "Food & Dining")        |
+| color          | VARCHAR(7)   | Hex color code (e.g., "#10B981")              |
+| icon           | VARCHAR(50)  | Material Icon name (e.g., "restaurant")       |
++----------------+--------------+-----------------------------------------------+
+
+  - Foreign key: user_id -> users(id) ON DELETE CASCADE
+  - When user_id is NULL, the category is a system-wide default visible to all
+  - When user_id is set, the category is private to that user
+
+  8 Default categories are seeded via database.sql:
+    Housing (#4F46E5, home), Food & Dining (#10B981, restaurant),
+    Transportation (#F59E0B, directions_car), Entertainment (#EC4899, movie),
+    Shopping (#8B5CF6, shopping_bag), Utilities (#06B6D4, bolt),
+    Health (#EF4444, favorite), Other (#6B7280, category)
+
+TABLE: expenses
++----------------+---------------+----------------------------------------------+
+| Column         | Type          | Notes                                        |
++----------------+---------------+----------------------------------------------+
+| id             | INT (PK)      | Auto-increment primary key                   |
+| user_id        | INT (FK)      | Owner of the expense                         |
+| amount         | DECIMAL(10,2) | Monetary value with 2 decimal places         |
+| date           | DATE          | When the expense occurred                    |
+| description    | VARCHAR(255)  | Optional free-text description               |
+| category_id    | INT (FK)      | Links to categories table                    |
+| created_at     | TIMESTAMP     | Auto-set on creation                         |
++----------------+---------------+----------------------------------------------+
+
+  - Foreign keys: user_id -> users(id), category_id -> categories(id)
+  - Both have ON DELETE CASCADE for automatic cleanup
+
+Relationships:
+  - One user has many expenses (1:N)
+  - One user has many custom categories (1:N)
+  - One category has many expenses (1:N)
+  - Data isolation: every query filters by user_id from the session
+
+
+3. BACKEND API ARCHITECTURE
+================================================================================
+
+The backend is organized as a RESTful API using plain PHP files. All endpoints
+return JSON responses with appropriate HTTP status codes.
+
+3.1 Database Connection (api/config/database.php)
+-------------------------------------------------
+A Database class encapsulates the PDO connection. It connects to localhost
+with username "root", no password, and database "expense_tracker". The
+getConnection() method creates a PDO instance with UTF-8 character encoding.
+This class is instantiated in every API endpoint via include_once.
+
+3.2 Authentication Endpoints (api/auth/)
+-----------------------------------------
+
+POST /api/auth/register.php
+  Input:  { username, email, password }
+  Process:
+    1. Validates all fields are non-empty
+    2. Checks for duplicate email or username in the database
+    3. Hashes the password using password_hash() with PASSWORD_BCRYPT
+    4. Inserts the new user record
+    5. Immediately starts a session (auto-login after registration)
+    6. Stores user_id, username, email in $_SESSION
+  Output: 201 with user object, or 400/503 on error
+
+POST /api/auth/login.php
+  Input:  { email, password }
+  Process:
+    1. Validates fields are non-empty
+    2. Queries user by email (LIMIT 1)
+    3. Uses password_verify() to compare input against stored bcrypt hash
+    4. On success, stores user_id, username, email in $_SESSION
+  Output: 200 with user object, 401 on bad credentials, 400 on missing data
+
+GET /api/auth/me.php
+  Input:  None (reads session)
+  Process:
+    1. Checks if $_SESSION['user_id'] is set
+    2. Returns authenticated status and user info
+  Output: 200 { authenticated: true, user: {...} } or 401 { authenticated: false }
+  Purpose: Called on every page load to check if user is already logged in
+
+POST /api/auth/logout.php
+  Process:
+    1. Calls session_start() then session_destroy()
+  Output: 200 { message: "Logged out" }
+
+3.3 Category Endpoints (api/categories/)
+-----------------------------------------
+
+GET /api/categories/read.php
+  Auth: Required (401 if no session)
+  Process:
+    1. Queries categories WHERE user_id IS NULL OR user_id = current user
+    2. This returns both default system categories AND user's custom ones
+    3. Results ordered by name ASC
+  Output: { records: [{ id, name, color, icon }, ...] }
+
+POST /api/categories/create.php
+  Auth: Required
+  Input: { name, color, icon }
+  Process:
+    1. Sanitizes input with htmlspecialchars(strip_tags())
+    2. Inserts with user_id set to current session user
+    3. Returns the new category's auto-generated ID
+  Output: 201 { message, id }
+
+3.4 Expense Endpoints (api/expenses/)
+--------------------------------------
+
+POST /api/expenses/create.php
+  Auth: Required
+  Input: { amount, date, category_id, description? }
+  Process:
+    1. Validates amount, date, category_id are non-empty
+    2. Sanitizes all inputs
+    3. Inserts with user_id from session
+  Output: 201 on success
+
+GET /api/expenses/read.php
+  Auth: Required
+  Process:
+    1. LEFT JOINs expenses with categories to get category name, color, icon
+    2. Filters by user_id from session
+    3. Orders by date DESC, then created_at DESC
+    4. Returns nested category object within each expense record
+  Output: { records: [{ id, amount, date, description, category: {id,name,color,icon} }] }
+
+POST /api/expenses/update.php
+  Auth: Required
+  Input: { id, amount, category_id, date, description }
+  Process:
+    1. Updates the expense WHERE id = :id AND user_id = :user_id
+    2. The AND user_id clause prevents users from editing others' expenses
+  Output: 200 on success
+
+POST /api/expenses/delete.php
+  Auth: Required
+  Input: { id }
+  Process:
+    1. Deletes WHERE id = :id AND user_id = :user_id
+    2. Same user_id guard as update
+  Output: 200 on success
+
+GET /api/expenses/insights.php
+  Auth: Required
+  This is the most complex endpoint. It runs 5 separate queries:
+
+  Query 1 — Total This Month:
+    SUM(amount) WHERE MONTH(date) = current month AND YEAR(date) = current year
+
+  Query 2 — Category Breakdown:
+    SUM(amount) grouped by category (JOIN categories), ordered by total DESC
+    Returns: category name, color, and total for each
+
+  Query 3 — Daily Trend (Last 30 Days):
+    SUM(amount) grouped by date, for dates >= 30 days ago, ordered by date ASC
+
+  Query 4 — Largest Expense:
+    SELECT amount, description, date ORDER BY amount DESC LIMIT 1
+
+  Query 5 — Sub-Distribution:
+    SUM(amount) grouped by BOTH category AND description
+    Returns a nested structure: { "Food & Dining": [{description, total}, ...] }
+
+  Output: Single JSON object with all 5 datasets
+
+
+4. FRONTEND ARCHITECTURE
+================================================================================
+
+The entire frontend is a Single Page Application contained in one HTML file
+(index.html) with all logic in one JavaScript file (js/app.js).
+
+4.1 HTML Structure (index.html)
+-------------------------------
+
+The page has two top-level containers that are toggled via display:none/flex:
+
+  1. authContainer (#authContainer) — The authentication screen
+     - Split-screen layout with visual branding on the left
+     - Login form and Register form on the right (toggled via CSS class "active")
+
+  2. appContainer (#appContainer) — The main application
+     - Sidebar navigation with 4 links: Dashboard, Transactions, Analytics, Settings
+     - User profile section in sidebar with avatar and logout button
+     - Main content area with top bar (search, theme toggle, notifications, add button)
+     - 4 view sections (view-dashboard, view-transactions, view-analytics, view-settings)
+       toggled via display:none/block
+     - Add/Edit Expense modal overlay
+
+4.2 JavaScript Application Logic (js/app.js — 832 lines)
+---------------------------------------------------------
+
+The entire app runs inside a DOMContentLoaded event listener. Here is the
+initialization sequence:
+
+  init() calls these in order:
+    1. initTheme()         — Read theme from localStorage, apply data-theme attribute
+    2. initCurrency()      — Read currency preference or auto-detect from timezone
+    3. initNavigation()    — Attach click handlers to sidebar nav links
+    4. initSettings()      — Attach handlers for category form and currency selector
+    5. initNotifications() — Setup notification dropdown toggle and clear button
+    6. initAuth()          — Attach login/register form submit handlers and logout
+    7. checkAuth()         — GET /auth/me.php to see if user is already logged in
+       If authenticated:
+         8. fetchCategories() — Load categories for the expense form dropdown
+         9. refreshDashboard() — Load all data (insights + transactions)
+
+4.3 Authentication Logic
+------------------------
+
+initAuth() sets up:
+  - Toggle between login and register forms (add/remove "active" class)
+  - Login form submit: POST to /auth/login.php, on success call handleLoginSuccess()
+  - Register form submit: POST to /auth/register.php, on success call handleLoginSuccess()
+  - Logout button: POST to /auth/logout.php, then call handleLogout()
+
+handleLoginSuccess():
+  1. Calls checkAuth() which does GET /auth/me.php
+  2. If authenticated, calls showApp(user) to hide auth screen and show app
+  3. Then fetches categories and refreshes the dashboard
+
+showApp(user):
+  - Hides authContainer, shows appContainer
+  - Sets username in sidebar
+  - Updates avatar URL with user's name via ui-avatars.com service
+
+showAuth():
+  - Shows authContainer, hides appContainer
+
+4.4 SPA Navigation
+------------------
+
+initNavigation() attaches click handlers to all elements with class "nav-link".
+When clicked:
+  1. Remove "active" class from all nav links
+  2. Add "active" class to clicked link
+  3. Hide all view-section divs (set display:none)
+  4. Show the target section (read from data-target attribute, set display:block)
+
+No URL routing or hash-based navigation is used — it's purely DOM manipulation.
+
+4.5 Expense Modal (Add/Edit)
+-----------------------------
+
+openModal(isEdit):
+  - Shows the modal overlay by adding "active" class
+  - Prevents body scroll with overflow:hidden
+  - If isEdit=true: sets title to "Edit Expense", button to "Update Expense"
+  - If isEdit=false: resets form, sets title to "Add New Expense", clears ID field
+
+closeModal():
+  - Removes "active" class, restores body scroll
+
+Form submission handler:
+  1. Reads form data (amount, category_id, date, description)
+  2. Checks if expenseId exists (hidden field)
+     - If yes: POST to /expenses/update.php with the id
+     - If no: POST to /expenses/create.php
+  3. On success: close modal, call refreshDashboard()
+  4. Button shows "Saving..." during request and is disabled
+
+editTransaction(exp):
+  - Opens modal in edit mode
+  - Pre-fills all form fields with the expense's current values
+
+deleteTransaction(id):
+  - Shows a confirm() dialog
+  - If confirmed: POST to /expenses/delete.php
+  - On success: calls refreshDashboard()
+
+4.6 Data Fetching and Rendering
+-------------------------------
+
+refreshDashboard():
+  Calls both fetchInsights() and fetchTransactions() in parallel.
+
+fetchInsights():
+  1. GET /expenses/insights.php
+  2. Handles 401 by calling handleLogout() (session expired)
+  3. Calls these rendering functions with the response data:
+     - updateSummaryCards(data)       — Sets total month and average daily amounts
+     - renderTrendChart(daily_trend)  — Creates/updates the line chart
+     - renderCategoryChart(breakdown) — Creates/updates the doughnut chart
+     - renderBarChart(breakdown)      — Creates/updates the bar chart
+     - updateAnalyticsMetrics(data)   — Sets largest expense and top category cards
+     - renderDeepDive(sub_dist)       — Renders the category deep-dive list
+     - generateSmartAlerts(data)      — Creates notification items
+
+fetchTransactions():
+  1. GET /expenses/read.php
+  2. Handles 401 by calling handleLogout()
+  3. For each expense record, calls createTransactionElement(exp)
+  4. First 5 go into "recentTransactionsList" (dashboard view)
+  5. All go into "allTransactionsList" (transactions view)
+
+createTransactionElement(exp):
+  Creates a div with class "transaction-item" containing:
+  - Category icon (colored circle with Material Icon)
+  - Category name and description with formatted date
+  - Formatted amount with currency symbol
+  - Edit and Delete action buttons with attached event handlers
+
+4.7 Chart Rendering (Chart.js)
+------------------------------
+
+Three chart instances are maintained as module-level variables:
+  - trendChartInstance (line chart)
+  - categoryChartInstance (doughnut chart)
+  - barChartInstance (bar chart)
+
+Each render function destroys the previous instance before creating a new one
+to prevent memory leaks and canvas errors.
+
+renderTrendChart(trendData):
+  - Type: Line chart with gradient fill
+  - X-axis: Dates formatted as M/D
+  - Y-axis: Currency-formatted amounts
+  - Gradient: Purple (#4F46E5) fading from 40% opacity to 0%
+  - Smooth curve with tension: 0.4
+  - White points with purple border
+  - Theme-aware: grid colors and text colors adapt to dark/light mode
+
+renderCategoryChart(categoryData):
+  - Type: Doughnut chart with 75% cutout (thin ring)
+  - Colors: Each category's stored hex color
+  - Legend: Positioned on the right side
+  - Theme-aware tooltip and legend text colors
+
+renderBarChart(categoryData):
+  - Type: Bar chart with rounded corners (borderRadius: 6)
+  - Each bar uses its category's color
+  - Theme-aware grid and text colors
+
+4.8 Theme System (Dark Mode)
+-----------------------------
+
+Uses the data-theme HTML attribute on the document root element.
+
+initTheme():
+  1. Reads saved theme from localStorage (defaults to "light")
+  2. Calls setTheme() to apply it
+
+setTheme(theme):
+  1. Sets document.documentElement.setAttribute('data-theme', theme)
+  2. Saves to localStorage
+  3. Updates the toggle icon: dark_mode icon in light mode, light_mode in dark mode
+
+When theme is toggled:
+  1. Flips between "light" and "dark"
+  2. Calls refreshDashboard() to re-render charts with correct theme colors
+
+The CSS file uses CSS custom properties (variables) that change based on
+[data-theme="dark"] selectors. All UI elements reference these variables.
+
+4.9 Currency System
+-------------------
+
+getLocalCurrency():
+  Uses Intl.DateTimeFormat().resolvedOptions().timeZone to detect the user's
+  timezone and map it to a currency:
+    - Kolkata/Calcutta/Colombo -> INR
+    - London -> GBP
+    - Europe (non-London) -> EUR
+    - Sydney/Melbourne/Australia -> AUD
+    - Toronto/Vancouver -> CAD
+    - Default -> USD
+
+initCurrency():
+  1. Checks localStorage for "currencyOverride"
+  2. If set and not "AUTO", uses that currency
+  3. Otherwise, calls getLocalCurrency() for auto-detection
+
+formatCurrency(amount):
+  Uses Intl.NumberFormat with style: "currency" and the active currency code.
+  This provides locale-aware formatting (e.g., $1,234.56 or ₹1,234.56).
+
+Users can override the currency in the Settings view. Changes are saved to
+localStorage and trigger a full dashboard re-render.
+
+4.10 Smart Notifications System
+-------------------------------
+
+generateSmartAlerts(data):
+  Analyzes the insights data and creates up to 3 alerts:
+
+  1. Monthly Total Alert: "You've tracked $X in expenses so far this month."
+     (Only if total > 0)
+
+  2. Largest Expense Warning: "Your largest single expense was $X for [description]."
+     (Only if a largest expense exists)
+
+  3. Top Category Insight: "Your top spending category is [name]."
+     (Only if category breakdown has data)
+
+  These are rendered into the notification dropdown. A badge with the count
+  is shown on the notification bell icon. Clicking the bell marks them as read
+  (hides badge). The "Clear" button resets the list.
+
+
+5. SECURITY IMPLEMENTATION
+================================================================================
+
+5.1 Password Security
+  - Passwords are NEVER stored in plain text
+  - password_hash($password, PASSWORD_BCRYPT) creates a bcrypt hash
+  - password_verify($input, $stored_hash) compares during login
+  - Bcrypt includes a random salt automatically
+
+5.2 SQL Injection Prevention
+  - ALL database queries use PDO Prepared Statements
+  - Parameters are bound via bindParam() — never concatenated into SQL strings
+  - Example: WHERE email = :email with $stmt->bindParam(":email", $email)
+
+5.3 XSS Prevention
+  - All user inputs are sanitized with htmlspecialchars(strip_tags($input))
+  - This strips HTML tags and encodes special characters
+
+5.4 Session Security
+  - PHP's built-in session mechanism ($_SESSION) is used
+  - session_start() is called at the top of every API endpoint
+  - Protected endpoints check isset($_SESSION['user_id']) and return 401 if missing
+
+5.5 Data Isolation
+  - Every database query that touches user data includes WHERE user_id = :user_id
+  - Users can only see, edit, and delete their own data
+  - The update and delete endpoints use AND user_id = :user_id to prevent
+    unauthorized access even if an attacker knows an expense ID
+
+5.6 Foreign Key Constraints
+  - ON DELETE CASCADE on all foreign keys ensures that deleting a user
+    automatically removes all their expenses and custom categories
+
+
+6. FRONTEND DESIGN SYSTEM
+================================================================================
+
+The CSS uses a design token approach with CSS custom properties:
+
+  - Color tokens: --bg-primary, --bg-secondary, --text-primary, --text-muted, etc.
+  - These variables change values under [data-theme="dark"]
+  - Accent color: Indigo (#4F46E5) used consistently across buttons, charts, links
+  - Typography: Inter font family at weights 300-700
+  - Spacing: Consistent padding/margin scale
+  - Border radius: Rounded corners on all cards and inputs
+  - Shadows: Subtle box-shadows for depth
+
+Key UI patterns:
+  - Glassmorphism on the auth visual panel
+  - Gradient cards for primary metrics
+  - Smooth transitions on hover states
+  - Modal overlay with backdrop blur
+  - Category-colored icons throughout the app
+
+The layout uses CSS Grid for the dashboard and Flexbox for the sidebar + main
+content split. The sidebar is a fixed-width column, the main content fills
+the remaining space.
+
+
+7. APPLICATION DATA FLOW SUMMARY
+================================================================================
+
+  User opens page
+    -> init() runs
+    -> checkAuth() calls GET /auth/me.php
+    -> If not authenticated: show login/register screen
+    -> User submits credentials
+    -> POST /auth/login.php or /auth/register.php
+    -> Server validates, creates session
+    -> Frontend calls checkAuth() again to confirm
+    -> showApp() hides auth, shows app container
+    -> fetchCategories() populates the expense form dropdown
+    -> refreshDashboard() triggers:
+       -> fetchInsights() -> renders summary cards, 3 charts, deep dive, alerts
+       -> fetchTransactions() -> renders recent (5) and all transaction lists
+    -> User adds expense via modal
+       -> POST /expenses/create.php
+       -> refreshDashboard() reloads everything
+    -> User navigates between views via sidebar
+       -> Pure DOM toggling, no server calls except initial load
+    -> User changes theme
+       -> CSS variables switch, charts re-render
+    -> User logs out
+       -> POST /auth/logout.php
+       -> Session destroyed
+       -> Frontend shows auth screen again
+
+
+8. KEY DESIGN DECISIONS
+================================================================================
+
+1. Single Page Application without a framework:
+   The app uses vanilla JS instead of React/Vue/Angular. This keeps the project
+   lightweight with zero build steps — just open in browser via XAMPP.
+
+2. Session-based auth instead of JWT:
+   Since the app runs on a single server (XAMPP), PHP sessions are simpler and
+   more secure than managing JWTs on the client side.
+
+3. Single insights endpoint:
+   Instead of multiple API calls for dashboard data, insights.php runs 5 queries
+   and returns everything in one response, minimizing HTTP round-trips.
+
+4. Categories with NULL user_id for defaults:
+   This elegant approach allows system-wide default categories while letting
+   users add their own. The query "WHERE user_id IS NULL OR user_id = ?" 
+   returns both in a single query.
+
+5. Chart.js for visualization:
+   A lightweight, well-documented charting library loaded via CDN, avoiding
+   the complexity of D3.js while providing professional-looking charts.
+
+6. CSS custom properties for theming:
+   Dark mode is achieved by simply changing variable values under a
+   [data-theme="dark"] selector, rather than duplicating entire stylesheets.
+
+7. Auto-currency detection:
+   Using Intl.DateTimeFormat().resolvedOptions().timeZone to infer the user's
+   likely currency avoids requiring a manual setup step for new users.
+
+================================================================================
+                          END OF TECHNICAL EXPLANATION
+================================================================================
